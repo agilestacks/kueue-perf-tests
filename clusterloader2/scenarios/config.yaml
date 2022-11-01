@@ -1,0 +1,100 @@
+
+# {{$MODE := DefaultParam .MODE "Indexed"}}
+# {{$LOAD_TEST_THROUGHPUT := DefaultParam .CL2_LOAD_TEST_THROUGHPUT 10}}
+
+# {{$namespaces := 1 }}
+# {{$smallJobSize := 5}}
+# {{$smallJobsPerNamespace := 5}}
+
+# {{$CLUSTER_QUEUE := DefaultParam .CLUSTER_QUEUE "cluster-queue"}}
+# {{$LOCAL_QUEUE := DefaultParam .LOCAL_QUEUE "local-queue"}}
+# {{$CPU := DefaultParam .CPU 4 }}
+# {{$MEMORY := DefaultParam .MEMORY "12Gi" }}
+# {{$RESOURCE_FLAVOR := DefaultParam .RESOURCE_FLAVOR "default"}}
+
+name: batch
+
+namespace:
+  number: {{$namespaces}}
+
+tuningSets:
+- name: UniformQPS
+  qpsLoad:
+    qps: {{$LOAD_TEST_THROUGHPUT}}
+
+steps:
+- name: Start measurements
+  measurements:
+  - Identifier: PodStartupLatency
+    Method: PodStartupLatency
+    Params:
+      action: start
+      labelSelector: group = test-pod
+      threshold: 20s    
+  - Identifier: WaitForFinishedJobs
+    Method: WaitForFinishedJobs
+    Params:
+      action: start
+      labelSelector: group = test-job    
+- name: Create resource flavor
+  phases:
+  - replicasPerNamespace: 1
+    tuningSet: UniformQPS
+    objectBundle:
+    - basename: default
+      objectTemplatePath: resource-flavor.yaml
+      templateFillMap:
+        ResourceFlavor: {{$RESOURCE_FLAVOR}}   
+- name: Create cluster queue
+  phases:
+  - replicasPerNamespace: 1
+    tuningSet: UniformQPS
+    objectBundle:
+    - basename: cluster-queue
+      objectTemplatePath: cluster-queue.yaml
+      templateFillMap:
+        ClusterQueue: {{$CLUSTER_QUEUE}}  
+        ResourceFlavor: "{{$RESOURCE_FLAVOR}}-0"
+        CPU: {{$CPU}}
+        Memory: {{$MEMORY}}   
+- name: Create local queue
+  phases: 
+  - namespaceRange:
+      min: 1
+      max: {{$namespaces}}
+    replicasPerNamespace: 1
+    tuningSet: UniformQPS
+    objectBundle:
+    - basename: local-queue
+      objectTemplatePath: "local-queue.yaml"
+      templateFillMap:
+        LocalQueue: {{$LOCAL_QUEUE}}
+        ClusterQueue: "{{$CLUSTER_QUEUE}}-0"
+- name: Create {{$MODE}} jobs
+  phases:
+  - namespaceRange:
+      min: 1
+      max: {{$namespaces}}
+    replicasPerNamespace: {{$smallJobsPerNamespace}}
+    tuningSet: UniformQPS
+    objectBundle:
+    - basename: small
+      objectTemplatePath: "job.yaml"
+      templateFillMap:
+        Replicas: {{$smallJobSize}}
+        Mode: {{$MODE}}
+        LocalQueue: "{{$LOCAL_QUEUE}}-0"           
+- name: Wait for {{$MODE}} jobs to finish
+  measurements:
+  - Identifier: WaitForFinishedJobs
+    Method: WaitForFinishedJobs
+    Params:
+      action: gather
+      timeout: 2m
+- name: Measure pod startup latency
+  measurements:
+  - Identifier: PodStartupLatency
+    Method: PodStartupLatency
+    Params:
+      action: gather      
+   

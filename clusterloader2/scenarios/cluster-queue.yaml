@@ -1,0 +1,17 @@
+apiVersion: kueue.x-k8s.io/v1alpha2
+kind: ClusterQueue
+metadata:
+  name: {{.ClusterQueue}}
+spec:
+  namespaceSelector: {}
+  resources:
+  - name: "cpu"
+    flavors:
+    - name: {{.ResourceFlavor}}
+      quota:
+        min: {{.CPU}}
+  - name: "memory"
+    flavors:
+    - name: {{.ResourceFlavor}}
+      quota:
+        min: {{.Memory}}
